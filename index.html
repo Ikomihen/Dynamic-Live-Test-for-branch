@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    .chat-container {
+      max-width: 600px;
+      margin: auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      padding: 20px;
+      position: relative;
+    }
+    .messages {
+      height: 300px;
+      overflow-y: auto;
+      border-bottom: 1px solid #ddd;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+    }
+    .message {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .message img {
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      margin-right: 10px;
+    }
+    .message-content {
+      max-width: 80%;
+    }
+    .message-content p {
+      margin: 0;
+    }
+    .message-content span {
+      font-size: 0.8em;
+      color: #555;
+    }
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-left: 5px;
+    }
+    .online {
+      background-color: #4CAF50; /* Green for online */
+      box-shadow: 0 0 5px rgba(0, 255, 0, 0.6); /* Glowing effect */
+    }
+    .offline {
+      background-color: #ccc; /* Grey for offline */
+    }
+    form {
+      display: flex;
+      align-items: center;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    button {
+      padding: 10px;
+      font-size: 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #sendIcon {
+      width: 20px;
+      height: 20px;
+      margin-right: 5px;
+    }
+    #usernameSection {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    #usernameDropdown {
+      position: relative;
+    }
+    #usernameDropdown button {
+      padding: 5px 10px;
+      font-size: 14px;
+      background-color: #f4f4f4;
+      color: #333;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #usernameDropdown button:hover {
+      background-color: #e4e4e4;
+    }
+    #usernameDropdown .dropdown-content {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
+      width: 150px;
+    }
+    #usernameDropdown .dropdown-content button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      background: none;
+      border: none;
+      text-align: left;
+      cursor: pointer;
+    }
+    #usernameDropdown .dropdown-content button:hover {
+      background-color: #f0f0f0;
+    }
+    #activeUsersSection {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div id="usernameSection">
+      <span id="currentUsername">Username</span>
+      <div id="usernameDropdown">
+        <button id="dropdownBtn">Change Username</button>
+        <div class="dropdown-content" id="dropdownContent">
+          <button id="changeUsernameBtn">Change Username</button>
+        </div>
+      </div>
+    </div>
+    <div id="activeUsersSection">
+      <h4>Active Users: <span id="activeUserCount">0</span></h4>
+    </div>
+    <div class="messages" id="messages"></div>
+    <form id="chatForm">
+      <input type="text" id="messageInput" placeholder="Type a message..." required>
+      <button type="submit"><img id="sendIcon" src="send-icon.png" alt="Send Icon">Send</button>
+    </form>
+  </div>
+
+  <!-- Firebase App (the core Firebase SDK) -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js"></script>
+
+  <script type="module">
+    // Your Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyD0ohfy9u-CDt9K7ZDX-UUbzNCbCRhL7TY",
+      authDomain: "credentials-a17e3.firebaseapp.com",
+      projectId: "credentials-a17e3",
+      storageBucket: "credentials-a17e3.appspot.com",
+      messagingSenderId: "968049262137",
+      appId: "1:968049262137:web:06929729e6c9ca91bcd7e8",
+      measurementId: "G-9VPPGVQN5L"
+    };
+
+    // Initialize Firebase
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc, where } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Get references to DOM elements
+    const messagesDiv = document.getElementById('messages');
+    const chatForm = document.getElementById('chatForm');
+    const messageInput = document.getElementById('messageInput');
+    const dropdownBtn = document.getElementById('dropdownBtn');
+    const dropdownContent = document.getElementById('dropdownContent');
+    const changeUsernameBtn = document.getElementById('changeUsernameBtn');
+    const currentUsername = document.getElementById('currentUsername');
+    const activeUserCount = document.getElementById('activeUserCount');
+
+    let username = localStorage.getItem('username') || 'Username';
+    let userPresenceRef = doc(db, 'presence', username);
+
+    // Load username from local storage
+    window.onload = async () => {
+      currentUsername.textContent = username;
+      await updatePresence(true);
+
+      // When user goes offline
+      window.addEventListener('beforeunload', async () => {
+        await updatePresence(false);
+      });
+
+      // Listen for active users
+      const presenceQuery = query(collection(db, 'presence'), where('online', '==', true));
+      onSnapshot(presenceQuery, (querySnapshot) => {
+        activeUserCount.textContent = querySnapshot.size;
+      });
+    };
+
+    // Update user presence
+    const updatePresence = async (status) => {
+      await setDoc(userPresenceRef, { online: status }, { merge: true });
+    };
+
+    // Toggle dropdown content
+    dropdownBtn.addEventListener('click', () => {
+      dropdownContent.style.display = dropdownContent.style.display === 'block' ? 'none' : 'block';
+    });
+
+    // Handle change username
+    changeUsernameBtn.addEventListener('click', () => {
+      const newUsername = prompt('Enter new username:');
+      if (newUsername) {
+        username = newUsername.trim();
+        localStorage.setItem('username', username);
+        currentUsername.textContent = username;
+        dropdownContent.style.display = 'none';
+        // Update user presence reference
+        userPresenceRef = doc(db, 'presence', username);
+      }
+    });
+
+    // Handle form submission
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const messageText = messageInput.value;
+      if (messageText.trim()) {
+        try {
+          await addDoc(collection(db, 'messages'), {
+            text: messageText,
+            username,
+            timestamp: new Date()
+          });
+          messageInput.value = '';
+        } catch (error) {
+          alert('Error sending message: ' + error.message);
+        }
+      }
+    });
+
+    // Load messages in real-time
+    const q = query(collection(db, 'messages'), orderBy('timestamp'));
+    onSnapshot(q, (querySnapshot) => {
+      messagesDiv.innerHTML = '';
+      querySnapshot.forEach((doc) => {
+        const message = doc.data();
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message');
+        messageElement.innerHTML = `
+          <div class="message-content">
+            <p>
+              <strong>${message.username || 'Anonymous'}:</strong> ${message.text}
+              <span class="status-indicator ${message.username === username ? 'online' : 'offline'}"></span>
+            </p>
+            <span>${new Date(message.timestamp.seconds * 1000).toLocaleTimeString()}</span>
+          </div>
+        `;
+        messagesDiv.appendChild(messageElement);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to the bottom
+      });
+    });
+  </script>
+</body>
+</html>
