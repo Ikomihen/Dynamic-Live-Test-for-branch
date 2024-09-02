@@ -56,15 +56,16 @@
       margin-left: 5px;
     }
     .online {
-      background-color: #4CAF50; /* Green for online */
-      box-shadow: 0 0 5px rgba(0, 255, 0, 0.6); /* Glowing effect */
+      background-color: #4CAF50;
+      box-shadow: 0 0 5px rgba(0, 255, 0, 0.6);
     }
     .offline {
-      background-color: #ccc; /* Grey for offline */
+      background-color: #ccc;
     }
     form {
       display: flex;
       align-items: center;
+      gap: 10px;
     }
     input[type="text"] {
       flex: 1;
@@ -74,7 +75,7 @@
       border-radius: 5px;
     }
     button {
-      padding: 10px;
+      padding: 5px;
       font-size: 16px;
       background-color: #4CAF50;
       color: white;
@@ -87,10 +88,10 @@
     button:hover {
       background-color: #45a049;
     }
-    #sendIcon {
-      width: 20px;
-      height: 20px;
-      margin-right: 5px;
+    #sendIcon, #shareIcon {
+      width: 18px;
+      height: 18px;
+      margin-right: 2px;
     }
     #usernameSection {
       display: flex;
@@ -140,6 +141,28 @@
     #activeUsersSection {
       margin-bottom: 10px;
     }
+    #selectedFile {
+      margin: 10px 0;
+      font-style: italic;
+      color: #555;
+    }
+    .message-content img {
+      max-width: 100%;
+      height: auto;
+    }
+    .view-btn {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 5px 10px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .view-btn:hover {
+      background-color: #0056b3;
+    }
   </style>
 </head>
 <body>
@@ -147,28 +170,36 @@
     <div id="usernameSection">
       <span id="currentUsername">Username</span>
       <div id="usernameDropdown">
-        <button id="dropdownBtn">Change Username</button>
+        <button id="dropdownBtn">Options</button>
         <div class="dropdown-content" id="dropdownContent">
-          <button id="changeUsernameBtn">Change Username</button>
+          <button id="changeUsernameBtn" style="color: blue" >Change Username</button>
+          <input type="file" id="profilePicInput" style="display:none;">
+          <button id="uploadProfilePicBtn" style="color: blue" >Upload Profile Picture</button>
+      
         </div>
       </div>
     </div>
     <div id="activeUsersSection">
       <h4>Active Users: <span id="activeUserCount">0</span></h4>
+      </br>
+      <em> DS(Admin): refresh page after selecting Profile pic to comit changes. select file and click send; file maynot display after selecting unless you click send
     </div>
     <div class="messages" id="messages"></div>
     <form id="chatForm">
+     <button type="button" id="fileShareBtn">📎</button>
       <input type="text" id="messageInput" placeholder="Type a message..." required>
-      <button type="submit"><img id="sendIcon" src="send-icon.png" alt="Send Icon">Send</button>
+      <input type="file" id="fileInput" style="display: none;">
+     
+      <button type="submit">Send</button>
+      <span id="selectedFile"></span>
     </form>
   </div>
 
-  <!-- Firebase App (the core Firebase SDK) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js"></script>
 
   <script type="module">
-    // Your Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyD0ohfy9u-CDt9K7ZDX-UUbzNCbCRhL7TY",
       authDomain: "credentials-a17e3.firebaseapp.com",
@@ -179,103 +210,153 @@
       measurementId: "G-9VPPGVQN5L"
     };
 
-    // Initialize Firebase
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc, where } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const storage = getStorage(app);
 
-    // Get references to DOM elements
     const messagesDiv = document.getElementById('messages');
     const chatForm = document.getElementById('chatForm');
     const messageInput = document.getElementById('messageInput');
+    const fileInput = document.getElementById('fileInput');
+    const fileShareBtn = document.getElementById('fileShareBtn');
+    const selectedFileSpan = document.getElementById('selectedFile');
     const dropdownBtn = document.getElementById('dropdownBtn');
     const dropdownContent = document.getElementById('dropdownContent');
     const changeUsernameBtn = document.getElementById('changeUsernameBtn');
-    const currentUsername = document.getElementById('currentUsername');
-    const activeUserCount = document.getElementById('activeUserCount');
+    const uploadProfilePicBtn = document.getElementById('uploadProfilePicBtn');
+    const profilePicInput = document.getElementById('profilePicInput');
+    let activeUsername = 'Anonymous'; 
+    let selectedFile = null;
 
-    let username = localStorage.getItem('username') || 'Username';
-    let userPresenceRef = doc(db, 'presence', username);
-
-    // Load username from local storage
-    window.onload = async () => {
-      currentUsername.textContent = username;
-      await updatePresence(true);
-
-      // When user goes offline
-      window.addEventListener('beforeunload', async () => {
-        await updatePresence(false);
-      });
-
-      // Listen for active users
-      const presenceQuery = query(collection(db, 'presence'), where('online', '==', true));
-      onSnapshot(presenceQuery, (querySnapshot) => {
-        activeUserCount.textContent = querySnapshot.size;
-      });
-    };
-
-    // Update user presence
-    const updatePresence = async (status) => {
-      await setDoc(userPresenceRef, { online: status }, { merge: true });
-    };
-
-    // Toggle dropdown content
     dropdownBtn.addEventListener('click', () => {
-      dropdownContent.style.display = dropdownContent.style.display === 'block' ? 'none' : 'block';
+      dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
     });
 
-    // Handle change username
     changeUsernameBtn.addEventListener('click', () => {
       const newUsername = prompt('Enter new username:');
       if (newUsername) {
-        username = newUsername.trim();
-        localStorage.setItem('username', username);
-        currentUsername.textContent = username;
-        dropdownContent.style.display = 'none';
-        // Update user presence reference
-        userPresenceRef = doc(db, 'presence', username);
+        activeUsername = newUsername;
+        document.getElementById('currentUsername').textContent = activeUsername;
       }
     });
 
-    // Handle form submission
-    chatForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const messageText = messageInput.value;
-      if (messageText.trim()) {
+    profilePicInput.addEventListener('change', async () => {
+      const file = profilePicInput.files[0];
+      if (file) {
         try {
-          await addDoc(collection(db, 'messages'), {
-            text: messageText,
-            username,
-            timestamp: new Date()
-          });
-          messageInput.value = '';
+          const profilePicRef = ref(storage, `profile_pictures/${activeUsername}`);
+          await uploadBytes(profilePicRef, file);
+          alert('Profile picture uploaded successfully!');
+          window.location.reload(); // Refresh the page after upload
         } catch (error) {
-          alert('Error sending message: ' + error.message);
+          alert('Error uploading profile picture.');
+          console.error(error);
         }
       }
     });
 
-    // Load messages in real-time
-    const q = query(collection(db, 'messages'), orderBy('timestamp'));
-    onSnapshot(q, (querySnapshot) => {
+    uploadProfilePicBtn.addEventListener('click', () => {
+      profilePicInput.click();
+    });
+
+    fileShareBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', () => {
+      selectedFile = fileInput.files[0];
+      if (selectedFile) {
+        selectedFileSpan.textContent = `Selected File: ${selectedFile.name}`;
+      } else {
+        selectedFileSpan.textContent = '';
+      }
+    });
+
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      let messageText = messageInput.value.trim();
+
+      if (messageText === '' && !selectedFile) return;
+
+      let fileUrl = null;
+      if (selectedFile) {
+        try {
+          const storageRef = ref(storage, `files/${selectedFile.name}`);
+          await uploadBytes(storageRef, selectedFile);
+          fileUrl = await getDownloadURL(storageRef);
+        } catch (error) {
+          alert('Error uploading file.');
+          console.error(error);
+        }
+      }
+
+      try {
+        await addDoc(collection(db, 'messages'), {
+          username: activeUsername,
+          text: messageText,
+          fileUrl: fileUrl,
+          timestamp: new Date(),
+        });
+
+        messageInput.value = '';
+        fileInput.value = '';
+        selectedFile = null;
+        selectedFileSpan.textContent = '';
+      } catch (error) {
+        alert('Error sending message.');
+        console.error(error);
+      }
+    });
+
+    const q = query(collection(db, 'messages'), orderBy('timestamp', 'asc'));
+
+    onSnapshot(q, (snapshot) => {
       messagesDiv.innerHTML = '';
-      querySnapshot.forEach((doc) => {
+
+      snapshot.forEach((doc) => {
         const message = doc.data();
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message');
-        messageElement.innerHTML = `
-          <div class="message-content">
-            <p>
-              <strong>${message.username || 'Anonymous'}:</strong> ${message.text}
-              <span class="status-indicator ${message.username === username ? 'online' : 'offline'}"></span>
-            </p>
-            <span>${new Date(message.timestamp.seconds * 1000).toLocaleTimeString()}</span>
-          </div>
-        `;
-        messagesDiv.appendChild(messageElement);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to the bottom
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message');
+
+        const messageImg = document.createElement('img');
+        const profilePicUrl = `profile_pictures/${message.username}`;
+        getDownloadURL(ref(storage, profilePicUrl))
+          .then((url) => {
+            messageImg.src = url;
+          })
+          .catch(() => {
+            messageImg.src = 'default-profile-pic.png';
+          });
+
+        messageDiv.appendChild(messageImg);
+
+        const contentDiv = document.createElement('div');
+        contentDiv.classList.add('message-content');
+        const userSpan = document.createElement('span');
+        userSpan.textContent = `${message.username} | ${new Date(message.timestamp.seconds * 1000).toLocaleTimeString()}`;
+        userSpan.style.fontWeight = 'bold';
+
+        const textP = document.createElement('p');
+        textP.textContent = message.text;
+
+        contentDiv.appendChild(userSpan);
+        contentDiv.appendChild(textP);
+
+        if (message.fileUrl) {
+          const image = new Image();
+          image.src = message.fileUrl;
+          image.style.width = '100%';
+          image.style.height = 'auto';
+          contentDiv.appendChild(image);
+        }
+
+        messageDiv.appendChild(contentDiv);
+        messagesDiv.appendChild(messageDiv);
       });
     });
   </script>
