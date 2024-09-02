@@ -70,17 +70,17 @@
     input[type="text"] {
       flex: 1;
       padding: 10px;
-      font-size: 16px;
+      font-size: 11px;
       border: 1px solid #ddd;
       border-radius: 5px;
     }
     button {
-      padding: 5px;
-      font-size: 16px;
+      padding: 9px;
+      font-size: 12px;
       background-color: #4CAF50;
       color: white;
       border: none;
-      border-radius: 5px;
+      border-radius: 4px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -89,9 +89,9 @@
       background-color: #45a049;
     }
     #sendIcon, #shareIcon {
-      width: 18px;
-      height: 18px;
-      margin-right: 2px;
+      width: 15px;
+      height: 15px;
+      margin-right: -20px;
     }
     #usernameSection {
       display: flex;
@@ -187,8 +187,9 @@
     <div class="messages" id="messages"></div>
     <form id="chatForm">
      <button type="button" id="fileShareBtn">📎</button>
+           <button type="button" id="voiceNoteBtn">🎤</button>
       <input type="text" id="messageInput" placeholder="Type a message..." required>
-      <input type="file" id="fileInput" style="display: none;">
+      <input type="file" id="fileInput" style="display: none;">      
      
       <button type="submit">Send</button>
       <span id="selectedFile"></span>
@@ -232,15 +233,47 @@
     let activeUsername = 'Anonymous'; 
     let selectedFile = null;
 
+   const voiceNoteBtn = document.getElementById('voiceNoteBtn');
+   
+       const currentUsernameSpan = document.getElementById('currentUsername');
+ 
+    
+        const loadUserProfile = async () => {
+      const storedUsername = localStorage.getItem('username');
+      const storedProfilePicUrl = localStorage.getItem('profilePicUrl');
+
+      if (storedUsername) {
+        activeUsername = storedUsername;
+        currentUsernameSpan.textContent = activeUsername;
+      }
+
+      if (storedProfilePicUrl) {
+        const profilePicRef = ref(storage, storedProfilePicUrl);
+        const profilePicUrl = await getDownloadURL(profilePicRef);
+        currentUsernameSpan.innerHTML = `<img src="${profilePicUrl}" alt="Profile Picture"> ${activeUsername}`;
+      }
+    };
+
+    loadUserProfile();
+    
+    
+     // Toggle dropdown menu
     dropdownBtn.addEventListener('click', () => {
-      dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
+      dropdownContent.style.display = dropdownContent.style.display === 'block' ? 'none' : 'block';
     });
 
-    changeUsernameBtn.addEventListener('click', () => {
-      const newUsername = prompt('Enter new username:');
+    // Update username
+    changeUsernameBtn.addEventListener('click', async () => {
+      const newUsername = prompt('Enter your new username:');
       if (newUsername) {
         activeUsername = newUsername;
-        document.getElementById('currentUsername').textContent = activeUsername;
+        localStorage.setItem('username', activeUsername);
+        currentUsernameSpan.textContent = activeUsername;
+
+        // Save username to Firestore
+        await setDoc(doc(db, 'users', activeUsername), {
+          username: activeUsername
+        });
       }
     });
 
@@ -258,6 +291,9 @@
         }
       }
     });
+    
+    
+    
 
     uploadProfilePicBtn.addEventListener('click', () => {
       profilePicInput.click();
@@ -359,6 +395,58 @@
         messagesDiv.appendChild(messageDiv);
       });
     });
+    
+       // Voice note recording
+    let mediaRecorder;
+    let audioChunks = [];
+
+    voiceNoteBtn.addEventListener('click', async () => {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+
+          mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            audioChunks = [];
+
+            // Upload the audio to Firebase Storage
+            const audioRef = ref(storage, `voice_notes/${new Date().toISOString()}.webm`);
+            await uploadBytes(audioRef, audioBlob);
+            const audioUrl = await getDownloadURL(audioRef);
+
+            // Send the audio URL as a message
+            await addDoc(collection(db, 'messages'), {
+              username: activeUsername,
+              text: 'Voice Note',
+              fileUrl: audioUrl,
+              timestamp: new Date(),
+            });
+          };
+
+          mediaRecorder.start();
+          voiceNoteBtn.textContent = 'Stop Recording';
+        } catch (error) {
+          console.error('Error accessing microphone:', error);
+          alert('Microphone access is required to record a voice note.');
+        }
+      } else if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        voiceNoteBtn.textContent = '🎤';
+      }
+    });
+    
+    // Function to load username and profile picture
+
+    
+    
+    
+    
+    
   </script>
 </body>
 </html>
